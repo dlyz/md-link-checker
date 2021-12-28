@@ -16,9 +16,9 @@ export class DocumentStore {
     ) {
     }
 
-    processAllDocuments = () => {
+    reprocessAllDocuments = () => {
         for (const state of this.documents.values()) {
-            state.processDocument();
+            state.processDocument(true);
         }
     };
 

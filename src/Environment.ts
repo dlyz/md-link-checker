@@ -5,13 +5,15 @@ import { githubSlugifier, Slugifier } from './slugify';
 
 export interface Configuration {
     countryCodeRegex?: string,
+	cacheTtl?: number,
 }
 
 export class Environment {
 
     configuration: Configuration;
     public readonly slugifier: Slugifier = githubSlugifier;
-    public readonly parser: MarkdownParser = new GrammarMarkdownParser(this.slugifier);
+    private readonly _parser: GrammarMarkdownParser = new GrammarMarkdownParser(this.slugifier);
+    public readonly parser: MarkdownParser = this._parser;
     public readonly linkChecker: LinkChecker;
 
 
@@ -27,6 +29,9 @@ export class Environment {
         );
     }
 
+    async initialize() {
+        await this._parser.initialize();
+    }
 
 
     updateConfig(config: vscode.WorkspaceConfiguration) {

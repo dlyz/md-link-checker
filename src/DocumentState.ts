@@ -11,16 +11,47 @@ function getWorkspaceFolder(document: vscode.TextDocument) {
 		|| vscode.workspace.workspaceFolders?.[0]?.uri;
 }
 
+
+interface LinkCacheEntry {
+    checkerState: any,
+    lastVisitDocVersion: number,
+}
+
 export class DocumentState {
     constructor(
         public readonly document: vscode.TextDocument,
         private readonly env: Environment
     ) {
-
     }
 
+    private readonly linkCache = new Map<any, LinkCacheEntry>();
+    private resetCaches: boolean = false;
 
-    async processDocument() {
+    private lastProcessing = Promise.resolve();
+    private lastProcessedVersion = -1;
+
+    processDocument(resetCaches: boolean = false) {
+        // have to maintain state instead of using function arguments
+        // to efficiently handle the case of multiple scheduled processings
+        this.resetCaches ||= resetCaches;
+        this.lastProcessing = continueWith(this.lastProcessing, this.processDocumentSeq.bind(this));
+    }
+
+    private async processDocumentSeq() {
+
+        const force = this.resetCaches;
+        if (this.resetCaches) {
+            this.linkCache.clear();
+            this.resetCaches = false;
+        }
+
+        const document = this.document;
+        // this is the version of parsed content. this is important
+        const documentVersion = document.version;
+
+        if (!force && documentVersion === this.lastProcessedVersion) {
+            return;
+        }
 
         // console.debug("processing: " + this.document.uri.toString());
 
@@ -28,10 +59,10 @@ export class DocumentState {
 
         const addDiagnostic = (link: MarkdownLink, message: string, severity: vscode.DiagnosticSeverity) => {
             diag.push(new vscode.Diagnostic(link.range, message, severity));
+            this.env.diagnostics.set(this.document.uri, diag);
         };
 
-        const document = this.document;
-        const { links, headings } = await //measurePerfAsync("parsing", () =>
+        const { links, headings } = //measurePerf("parsing", () =>
             this.env.parser.parseDocument(this.document, { parseLinks: true, parseHeadings: true })
         ;//);
 
@@ -39,6 +70,16 @@ export class DocumentState {
             uri: this.document.uri,
             get workspaceFolder() { return getWorkspaceFolder(document); },
             hasSluggedHeading: (heading: Slug) => !!headings && headings?.some(h => h.slugged.equals(heading)),
+            getCachedLink: (key) => {
+                const entry = this.linkCache.get(key);
+                if (entry) {
+                    entry.lastVisitDocVersion = documentVersion;
+                    return entry.checkerState;
+                } else {
+                    return undefined;
+                }
+            },
+            setCachedLink: (key, value) => this.linkCache.set(key, { checkerState: value, lastVisitDocVersion: documentVersion }),
         };
 
 
@@ -65,7 +106,7 @@ export class DocumentState {
                     // addDiagnostic(link, `Link check passed.\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Hint);
                 }
             } else {
-                addDiagnostic(link, `Link check failed.\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Error);
+                addDiagnostic(link, `Link check failed. Status: ${result.statusCode}\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Error);
             }
 
             if (result.countryCode) {
@@ -75,8 +116,21 @@ export class DocumentState {
 
         await Promise.all(links!.map(processLink));
 
-        this.env.diagnostics.set(this.document.uri, diag);
+        // removing all the links from cache that are not presented
+        // in the actual version of document
+        // this helps to force link recheck
+        for (const kv of this.linkCache) {
+            if (kv[1].lastVisitDocVersion !== documentVersion) {
+                this.linkCache.delete(kv[0]);
+            }
+        }
+
+        this.lastProcessedVersion = documentVersion;
+
+        // console.debug("processing completed: " + this.document.uri.toString());
     }
+
+
 
     processChanges(event: vscode.TextDocumentChangeEvent) {
         this.processDocument();
@@ -101,4 +155,8 @@ async function measurePerfAsync<T>(name: string, f: () => Promise<T>) {
     const to = performance.now();
     console.log(`pref: ${name}: ${to - from}ms`);
     return result;
+}
+
+function continueWith<T, U>(task: Promise<U>, continuation: () => Promise<T>) {
+    return task.then(continuation, continuation);
 }

@@ -3,12 +3,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { MarkdownParser } from './MarkdownParser';
 import { Slug, Slugifier } from './slugify';
+import { performance } from 'perf_hooks';
+const linkCheck = require('link-check');
+// import fetch from 'node-fetch';
 
-// For checking broken links
-const brokenLink = require('broken-link');
 
 export interface LinkCheckResult {
 	checkType: "web" | "file" | "none",
+	statusCode: number,
 	uri: vscode.Uri | undefined,
 	pathFound: boolean,
 	fragmentFound: boolean,
@@ -23,12 +25,17 @@ export interface LinkChecker {
 
 export interface LinkCheckerOptions {
 	countryCodeRegex?: string,
+
+	/** Number of seconds to consider cached check result valid */
+	cacheTtl?: number,
 }
 
 export interface LinkSourceDocument {
 	uri: vscode.Uri,
 	workspaceFolder: vscode.Uri | undefined,
-	hasSluggedHeading(heading: Slug): boolean
+	hasSluggedHeading(heading: Slug): boolean,
+	setCachedLink(key: any, value: any): void,
+	getCachedLink(key: any): any,
 }
 
 
@@ -37,18 +44,21 @@ export interface LinkSourceDocumentCache {
 }
 
 
-
 export class MainLinkChecker implements LinkChecker {
+
+	// private readonly urlChecker = new NodeFetchUrlChecker();
+	private readonly urlChecker = new LinkCheckUrlChecker();
 
 	constructor(
 		private readonly optionsProvider: () => LinkCheckerOptions,
 		private readonly slugifier: Slugifier,
 		private readonly markdownParser: MarkdownParser
 		) {
-
 	}
 
+
 	async checkLink(document: LinkSourceDocument, link: string): Promise<LinkCheckResult> {
+
 
 		const options = this.optionsProvider();
 		const uri = parseLink(document, link);
@@ -57,17 +67,33 @@ export class MainLinkChecker implements LinkChecker {
 
 			if (uri.scheme === "http" || uri.scheme === "https") {
 
-				const isBroken: boolean = await isHttpLinkBroken(link);
+				let checkResult;
+				try {
+					checkResult = await this.checkWebLink(document, link, options);
+				} catch (checkFail) {
+					return {
+						checkFail,
+						checkType: "web",
+						uri,
+						pathFound: false,
+						hasFragment: null,
+						fragmentFound: false,
+						statusCode: 0,
+					};
+				}
+
+				const pathFound = checkResult.status === "alive";
 
 				const cc = hasCountryCode(link, options.countryCodeRegex);
 
 				return {
 					checkType: "web",
 					uri,
-					pathFound: !isBroken,
+					pathFound,
 					hasFragment: null,
 					fragmentFound: false,
 					countryCode: cc,
+					statusCode: checkResult.statusCode,
 				};
 
 			} else if (uri.scheme === "file" || uri.scheme === "untitled") {
@@ -103,7 +129,8 @@ export class MainLinkChecker implements LinkChecker {
 					uri,
 					pathFound,
 					hasFragment,
-					fragmentFound
+					fragmentFound,
+					statusCode: pathFound ? 200 : 404,
 				};
 
 			}
@@ -114,13 +141,55 @@ export class MainLinkChecker implements LinkChecker {
 			uri,
 			pathFound: false,
 			hasFragment: null,
-			fragmentFound: false
+			fragmentFound: false,
+			statusCode: 0,
 		};
 	};
 
+	checkWebLink(document: LinkSourceDocument, link: string, options: LinkCheckerOptions) {
+
+		let cacheEntry = document.getCachedLink(link) as LinkCacheEntry | undefined;
+		if (cacheEntry && cacheEntry.lastCheckTime !== -2) {
+
+			// if still running
+			if (cacheEntry.lastCheckTime === -1) {
+				return cacheEntry.resultPromise;
+			}
+
+			const now = performance.now();
+			const ttl = (options.cacheTtl ?? 5*60)*1000;
+			if (now - cacheEntry.lastCheckTime <= ttl) {
+				return cacheEntry.resultPromise;
+			}
+		}
+
+		cacheEntry = {
+			resultPromise: null!,
+			lastCheckTime: -1,
+		};
+
+		cacheEntry.resultPromise = this.urlChecker.checkUrl(link).then(
+			result => {
+				cacheEntry!.lastCheckTime = performance.now();
+				return result;
+			},
+			error => {
+				cacheEntry!.lastCheckTime = -2;
+				throw error;
+			}
+		);
+
+		document.setCachedLink(link, cacheEntry);
+		return cacheEntry.resultPromise;
+	}
 
 }
 
+interface LinkCacheEntry {
+	resultPromise: Promise<UrlCheckResult>,
+	// -1: in progress, -2: promise failed
+	lastCheckTime: number,
+}
 
 const angleBracketLinkRe = /^<(.*)>$/;
 
@@ -173,11 +242,50 @@ function parseLink(
 }
 
 
-export function isHttpLinkBroken(address: string) {
-	return brokenLink(address, { allowRedirects: true });
+interface UrlCheckResult {
+
+	err: any,
+	statusCode: number,
+	status: "alive" | "ignored" | "dead",
 }
 
-export function fileExists(filePath: string) {
+class LinkCheckUrlChecker {
+
+	checkUrl(url: string): Promise<UrlCheckResult> {
+
+		return new Promise((resolve, reject) => {
+
+			linkCheck(url, (err: any, result: any) => {
+				if (err) {
+					reject(err);
+				} else {
+					resolve(result);
+				}
+			});
+		});
+	}
+}
+
+// incomplete implementation, may be used later
+// class NodeFetchUrlChecker {
+
+// 	async checkUrl(url: string): Promise<UrlCheckResult> {
+
+// 		const resposne = await fetch(url, {
+// 			method: "GET",
+// 		});
+
+// 		return {
+// 			lastCheckTime: 0,
+// 			statusCode: resposne.status,
+// 			status: resposne.status >= 200 && resposne.status < 300 ? "alive" : "dead",
+// 			err: undefined
+// 		};
+// 	}
+// }
+
+
+function fileExists(filePath: string) {
 	return new Promise<boolean>((resolve, reject) => {
 		fs.access(filePath, err => {
 			resolve(!err);
@@ -185,7 +293,7 @@ export function fileExists(filePath: string) {
 	});
 }
 
-export function readFile(filePath: string) {
+function readFile(filePath: string) {
 	return new Promise<string | undefined>((resolve, reject) => {
 		fs.readFile(filePath, "utf8", (err, data) => {
 			resolve(err ? undefined : data);
@@ -193,7 +301,7 @@ export function readFile(filePath: string) {
 	});
 }
 
-export function hasCountryCode(linkToCheck: string, regex: string | undefined): string | undefined {
+function hasCountryCode(linkToCheck: string, regex: string | undefined): string | undefined {
 
 	if (!regex) return undefined;
 

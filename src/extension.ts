@@ -5,7 +5,7 @@ import { DocumentStore } from './DocumentStore';
 
 
 
-export function activate(ctx: vscode.ExtensionContext) {
+export async function activate(ctx: vscode.ExtensionContext) {
 
     const diagnostics = vscode.languages.createDiagnosticCollection();
     ctx.subscriptions.push(diagnostics);
@@ -15,13 +15,15 @@ export function activate(ctx: vscode.ExtensionContext) {
         diagnostics
     );
 
+    await env.initialize();
+
     const documents = new DocumentStore(env);
     ctx.subscriptions.push(documents);
 
     ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration("mdLinkChecker")) {
             env.updateConfig(vscode.workspace.getConfiguration("mdLinkChecker"));
-            documents.processAllDocuments();
+            documents.reprocessAllDocuments();
         }
     }));
 

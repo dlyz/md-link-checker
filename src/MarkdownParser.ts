@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { IGrammar } from 'vscode-textmate';
 import { Slugifier, Slug } from './slugify';
 import { GrammarProvider } from './textmate/GrammarProvider';
 import { getEmbeddedGrammarDescriptor, markdownScopeName } from './textmate/MarkdownGrammar';
@@ -43,7 +44,7 @@ export interface MarkdownParser {
 	parseDocument(
 		document: vscode.TextDocument | string,
 		options: { parseLinks?: boolean, parseHeadings?: boolean }
-	): Promise<MarkdownParsingResult>;
+	): MarkdownParsingResult;
 }
 
 // consider implementing parser based on basic regexps:
@@ -62,15 +63,25 @@ export class GrammarMarkdownParser implements MarkdownParser {
 		]
 	});
 
-	async parseDocument(
-		document: vscode.TextDocument | string,
-		options: { parseLinks?: boolean, parseHeadings?: boolean }
-	): Promise<MarkdownParsingResult> {
+	private grammar?: IGrammar;
+
+	async initialize() {
+		if (this.grammar) return Promise.resolve();
+
 		const grammar = await this.grammars.loadGrammar(markdownScopeName);
 		if (!grammar) {
 			throw new Error(`Can not load grammar for markdown scope '${markdownScopeName}'`);
 		}
 
+		this.grammar = grammar;
+	}
+
+	parseDocument(
+		document: vscode.TextDocument | string,
+		options: { parseLinks?: boolean, parseHeadings?: boolean }
+	): MarkdownParsingResult {
+
+		const grammar = this.grammar!;
 		const doc = makeSlimDocument(document);
 
 		const headings: MarkdownHeading[] | undefined = options.parseHeadings ? [] : undefined;
@@ -114,66 +125,3 @@ export class GrammarMarkdownParser implements MarkdownParser {
 	}
 
 }
-
-// external libs tokenizer examples
-// measure("marked", () => {
-// 	const tokens = lexer.lex(this.document.getText());
-// 	let cnt = 0;
-
-// 	function traverse(tokens: any[]) {
-// 		for (const token of tokens) {
-// 			++cnt;
-// 			if ((token as any).tokens) {
-// 				traverse(token.tokens);
-// 			}
-// 		}
-// 	}
-
-// 	traverse(tokens);
-
-// 	console.log(tokens);
-// });
-
-
-// createMdEngine() {
-
-// 	const md = MarkdownIt({ html: true });
-
-// 	md.linkify.set({ fuzzyLink: false, });
-
-// 	// Extract rules from front matter plugin and apply at a lower precedence
-// 	let frontMatterRule: any;
-// 	(frontMatterPlugin as any)({
-// 		block: {
-// 			ruler: {
-// 				before: (_id: any, _id2: any, rule: any) => { frontMatterRule = rule; }
-// 			}
-// 		}
-// 	}, () => { /* noop */ });
-
-// 	md.block.ruler.before('fence', 'front_matter', frontMatterRule, {
-// 		alt: ['paragraph', 'reference', 'blockquote', 'list']
-// 	});
-
-// 	return md;
-// }
-
-// measure("markdown-it", () => {
-// 	const tokens = this.env.md.parse(this.document.getText(), {});
-// 	let cnt = 0;
-
-// 	function traverse(tokens: any[]) {
-// 		for (const token of tokens) {
-// 			++cnt;
-// 			if ((token as any).children) {
-// 				traverse(token.children);
-// 			}
-// 		}
-// 	}
-
-// 	traverse(tokens);
-// 	//console.debug(tokens);
-// });
-
-
-

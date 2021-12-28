@@ -3,7 +3,7 @@
   "publisher": "dlyz",
   "displayName": "Markdown Link Checker",
   "description": "Validates local and external links in markdown documents. Also checks links to heading in local files.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "MIT",
   "preview": true,
   "icon": "icon.png",
@@ -40,23 +40,29 @@
             "examples": [
               "(.com|aka\\.ms)/[a-z]{2}-[a-z]{2}/"
             ]
+          },
+          "mdLinkChecker.cacheTtl": {
+            "type": "number",
+            "markdownDescription": "Number of seconds to consider cached link check result valid.",
+            "default": "300"
           }
         }
       }
     ]
   },
   "scripts": {
-    "vscode:prepublish": "yarn run esbuild-base -- --minify",
+    "vscode:prepublish": "yarn run compile",
     "esbuild-base": "rimraf out && yarn run copy-onig && esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
-    "esbuild": "yarn run esbuild-base -- --sourcemap",
-    "esbuild-watch": "yarn run esbuild-base -- --sourcemap --watch",
+    "esbuild": "yarn run esbuild-base --sourcemap",
+    "esbuild-watch": "yarn run esbuild-base --sourcemap --watch",
     "test-compile": "tsc -p ./",
-    "compile": "tsc -p ./",
+    "compile": "yarn run esbuild-base --minify",
     "watch": "tsc -watch -p ./",
     "pretest": "yarn run compile && yarn run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "copy-onig": "copyfiles -f ./node_modules/vscode-oniguruma/release/onig.wasm out"
+    "copy-onig": "copyfiles -f ./node_modules/vscode-oniguruma/release/onig.wasm out",
+    "build": "vsce package"
   },
   "devDependencies": {
     "@types/glob": "^7.1.4",
@@ -75,7 +81,8 @@
     "typescript": "^4.4.4"
   },
   "dependencies": {
-    "broken-link": "^1.0.1",
+    "link-check": "^5.0.1",
+    "node-fetch": "3.0.0",
     "vscode-oniguruma": "^1.6.1",
     "vscode-textmate": "^6.0.0"
   }
