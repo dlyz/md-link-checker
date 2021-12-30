@@ -55,6 +55,17 @@
       {
         "command": "mdLinkChecker.manageHostCredentials",
         "title": "Markdown Link Checker: Manage host credentials"
+      },
+      {
+        "command": "mdLinkChecker.recheckDocument",
+        "title": "Markdown Link Checker: Recheck current document"
+      }
+    ],
+    "keybindings":[
+      {
+        "command": "mdLinkChecker.recheckDocument",
+        "key": "Alt+L",
+        "when": "editorLangId == markdown"
       }
     ]
   },

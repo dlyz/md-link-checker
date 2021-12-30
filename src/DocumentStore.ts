@@ -22,6 +22,13 @@ export class DocumentStore {
         }
     };
 
+    reprocessDocument = (document: vscode.TextDocument) => {
+        let state = this.documents.get(document);
+        if (state) {
+            state.processDocument(true);
+        }
+    };
+
     processDocument = (document: vscode.TextDocument) => {
         if (!isMarkdown(document))
             return;
