@@ -16,7 +16,7 @@ export interface LinkCheckResult {
 	fragmentFound: boolean,
 	hasFragment: boolean | null,
 	countryCode?: string,
-	checkFail?: any,
+	linkedDocument?: ParsedLinkedDocument,
 	requestError?: any,
 }
 
@@ -26,17 +26,20 @@ export interface LinkChecker {
 
 export interface LinkCheckerOptions {
 	countryCodeRegex?: string,
+}
 
-	/** Number of seconds to consider cached check result valid */
-	cacheTtl?: number,
+
+export interface ParsedLinkedDocument {
+	uri: vscode.Uri,
+	documentVersion: number,
+	hasSluggedHeading(heading: Slug): boolean,
 }
 
 export interface LinkSourceDocument {
 	uri: vscode.Uri,
 	workspaceFolder: vscode.Uri | undefined,
-	hasSluggedHeading(heading: Slug): boolean,
-	setCachedLink(key: any, value: any): void,
-	getCachedLink(key: any): any,
+	tryGetParsedDocument(uri: vscode.Uri): ParsedLinkedDocument | undefined,
+
 }
 
 
@@ -59,161 +62,115 @@ export class MainLinkChecker implements LinkChecker {
 		this.urlChecker = new NodeFetchUrlChecker();
 	}
 
-
-	async checkLink(document: LinkSourceDocument, link: string): Promise<LinkCheckResult> {
-
-
+	checkLink(document: LinkSourceDocument, link: string): Promise<LinkCheckResult> {
 		const options = this.optionsProvider();
+
 		const uri = parseLink(document, link);
 
 		if (uri) {
-
 			if (uri.scheme === "http" || uri.scheme === "https") {
-
-				let checkResult;
-				try {
-					checkResult = await this.checkWebLinkWithCache(document, link, options);
-				} catch (checkFail) {
-
-					return {
-						checkFail,
-						checkType: "web",
-						uri,
-						pathFound: false,
-						hasFragment: null,
-						fragmentFound: false,
-						statusCode: 0,
-					};
-				}
-
-				const pathFound = checkResult.alive;
-
-				const cc = hasCountryCode(link, options.countryCodeRegex);
-
-				return {
-					checkType: "web",
-					uri,
-					pathFound,
-					hasFragment: null,
-					fragmentFound: false,
-					countryCode: cc,
-					statusCode: checkResult.statusCode,
-					requestError: checkResult.err,
-				};
+				return this.checkWebLink(link, uri, options);
 
 			} else if (uri.scheme === "file" || uri.scheme === "untitled") {
-
-				const hasFragment = uri.fragment.length !== 0;
-
-				let pathFound;
-				let fragmentFound = false;
-				if (uri.with({ fragment: '' }).toString() === document.uri.toString()) {
-					pathFound = true;
-					if (hasFragment) {
-						fragmentFound = document.hasSluggedHeading(this.slugifier.fromFragment(uri.fragment));
-					}
-				} else {
-					if (hasFragment) {
-						const content = await readFile(uri.fsPath);
-
-						if (content !== undefined) {
-							pathFound = true;
-							const { headings } = await this.markdownParser.parseDocument(content, { parseHeadings: true });
-							const sluggedFragment = this.slugifier.fromFragment(uri.fragment);
-							fragmentFound = !!headings && headings.some(h => h.slugged.equals(sluggedFragment));
-						} else {
-							pathFound = false;
-						}
-
-					} else {
-						pathFound = await fileExists(uri.fsPath);
-					}
-				}
-				return {
-					checkType: "file",
-					uri,
-					pathFound,
-					hasFragment,
-					fragmentFound,
-					statusCode: pathFound ? 200 : 404,
-				};
-
+				return this.checkFileLink(document, uri, options);
 			}
 		}
 
-		return {
+		return Promise.resolve({
 			checkType: "none",
 			uri,
 			pathFound: false,
 			hasFragment: null,
 			fragmentFound: false,
 			statusCode: 0,
-		};
+		});
 	};
 
-	private checkWebLinkWithCache(document: LinkSourceDocument, link: string, options: LinkCheckerOptions) {
 
-		let cacheEntry = document.getCachedLink(link) as LinkCacheEntry | undefined;
-		if (cacheEntry && cacheEntry.lastCheckTime !== -2) {
 
-			// if still running
-			if (cacheEntry.lastCheckTime === -1) {
-				return cacheEntry.resultPromise;
-			}
+	private async checkWebLink(
+		link: string,
+		uri: vscode.Uri,
+		options: LinkCheckerOptions
+	): Promise<LinkCheckResult> {
 
-			const now = performance.now();
-			const ttl = (options.cacheTtl ?? 5*60)*1000;
-			if (now - cacheEntry.lastCheckTime <= ttl) {
-				return cacheEntry.resultPromise;
-			}
-		}
-
-		cacheEntry = {
-			resultPromise: null!,
-			lastCheckTime: -1,
-		};
-
-		cacheEntry.resultPromise = this.checkWebLinkWithAuth(link).then(
-			result => {
-				cacheEntry!.lastCheckTime = performance.now();
-				console.log(link, result);
-				return result;
-			},
-			error => {
-				cacheEntry!.lastCheckTime = -2;
-				console.warn("link check failed", link, error);
-				throw error;
-			}
-		);
-
-		document.setCachedLink(link, cacheEntry);
-		return cacheEntry.resultPromise;
-	}
-
-	async checkWebLinkWithAuth(url: string): Promise<UrlCheckResult> {
-
-		const parsedUrl = new URL(url);
+		const parsedUrl = new URL(link);
 		let authString = await this.hostCredentials.tryGet(parsedUrl.host);
 
-		let result = await this.urlChecker.checkUrl(url, authString || undefined);
+		let checkResult = await this.urlChecker.checkUrl(link, authString || undefined);
 
-		if (authString !== null && result.statusCode === 401) {
+		if (authString !== null && checkResult.statusCode === 401) {
 			const authString = await this.hostCredentials.requestNew(parsedUrl.host);
 
 			if (authString) {
-				return await this.urlChecker.checkUrl(url, authString);
+				checkResult = await this.urlChecker.checkUrl(link, authString);
 			}
 		}
 
-		return result;
+		const countryCode = hasCountryCode(link, options.countryCodeRegex);
+
+		return {
+			checkType: "web",
+			uri,
+			pathFound: checkResult.alive,
+			hasFragment: null,
+			fragmentFound: false,
+			countryCode,
+			statusCode: checkResult.statusCode,
+			requestError: checkResult.err,
+		};
+	}
+
+	private async checkFileLink(
+		document: LinkSourceDocument,
+		uri: vscode.Uri,
+		options: LinkCheckerOptions
+	): Promise<LinkCheckResult> {
+		const hasFragment = uri.fragment.length !== 0;
+
+		let pathFound;
+		let fragmentFound = false;
+		let requestError;
+
+		const linkedDocUri = uri.with({ fragment: '' });
+		const linkedDocument = document.tryGetParsedDocument(linkedDocUri);
+
+		if (linkedDocument) {
+			pathFound = true;
+			if (hasFragment) {
+				fragmentFound = linkedDocument.hasSluggedHeading(this.slugifier.fromFragment(uri.fragment));
+			}
+		} else {
+			if (hasFragment) {
+				let content;
+				[content, requestError] = await readFile(uri.fsPath);
+
+				if (content !== undefined) {
+					pathFound = true;
+					const { headings } = await this.markdownParser.parseDocument(content, { parseHeadings: true });
+					const sluggedFragment = this.slugifier.fromFragment(uri.fragment);
+					fragmentFound = !!headings && headings.some(h => h.slugged.equals(sluggedFragment));
+				} else {
+					pathFound = false;
+				}
+
+			} else {
+				[pathFound, requestError] = await fileExists(uri.fsPath);
+			}
+		}
+		return {
+			checkType: "file",
+			uri,
+			pathFound,
+			hasFragment,
+			fragmentFound,
+			statusCode: pathFound ? 200 : 404,
+			requestError,
+			linkedDocument,
+		};
 	}
 }
 
-interface LinkCacheEntry {
-	resultPromise: Promise<UrlCheckResult>,
-	// -1: in progress, -2: promise failed
-	lastCheckTime: number,
-}
 
 const angleBracketLinkRe = /^<(.*)>$/;
 
@@ -283,6 +240,7 @@ class NodeFetchUrlChecker {
 
 		if (authorization) {
 			headers = {
+				// eslint-disable-next-line @typescript-eslint/naming-convention
 				"Authorization": authorization,
 			};
 		}
@@ -293,7 +251,7 @@ class NodeFetchUrlChecker {
 		{
 			response = await fetch(url, {
 				method: "HEAD",
-				headers
+				headers,
 			});
 		} catch (err) {
 			return createError(err);
@@ -342,17 +300,17 @@ class NodeFetchUrlChecker {
 
 
 function fileExists(filePath: string) {
-	return new Promise<boolean>((resolve, reject) => {
+	return new Promise<[boolean, any]>((resolve, reject) => {
 		fs.access(filePath, err => {
-			resolve(!err);
+			resolve([!err, err]);
 		});
 	});
 }
 
 function readFile(filePath: string) {
-	return new Promise<string | undefined>((resolve, reject) => {
+	return new Promise<[string | undefined, any]>((resolve, reject) => {
 		fs.readFile(filePath, "utf8", (err, data) => {
-			resolve(err ? undefined : data);
+			resolve([err ? undefined : data, err]);
 		});
 	});
 }

@@ -29,24 +29,26 @@ export async function activate(ctx: vscode.ExtensionContext) {
     ctx.subscriptions.push(vscode.commands.registerCommand("mdLinkChecker.recheckDocument", async () => {
         const document = vscode.window.activeTextEditor?.document;
         if (document) {
-            await documents.reprocessDocument(document);
+            await documents.reprocessDocumentIfExists(document);
         }
     }));
 
     ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration("mdLinkChecker")) {
             env.updateConfig(vscode.workspace.getConfiguration("mdLinkChecker"));
-            documents.reprocessAllDocuments();
+            documents.reprocessExistingDocuments();
         }
     }));
 
     //ctx.subscriptions.push(vscode.workspace.onDidOpenTextDocument(documents.processDocument));
     ctx.subscriptions.push(vscode.workspace.onDidCloseTextDocument(documents.removeDocument));
-    //ctx.subscriptions.push(vscode.workspace.onDidChangeTextDocument(documents.updateDocument));
+    //ctx.subscriptions.push(vscode.workspace.onDidChangeTextDocument());
 
-    // for (const doc of vscode.workspace.textDocuments) {
-    //     documents.processDocument(doc);
-    // }
+    // we want to know about all the opened (potentially changed) documents,
+    // to use their actual headings
+    for (const doc of vscode.workspace.textDocuments) {
+        documents.ensureDocument(doc);
+    }
 
     ctx.subscriptions.push(vscode.languages.registerDocumentLinkProvider({ language: "markdown"}, {
         provideDocumentLinks: async (doc) => {

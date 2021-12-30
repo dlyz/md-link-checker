@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Command to recheck links in the active document.
+- Auto-recheck for links to other local changing documents.
 
 ## [0.0.3] - 2021-12-30
 

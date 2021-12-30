@@ -6,6 +6,8 @@ import { githubSlugifier, Slugifier } from './slugify';
 
 export interface Configuration {
     countryCodeRegex?: string,
+
+	/** Number of seconds to consider cached check result valid */
 	cacheTtl?: number,
 }
 

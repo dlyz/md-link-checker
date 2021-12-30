@@ -10,3 +10,4 @@ src/**
 icon.svg
 node_modules
 example.png
+test-workspaces
