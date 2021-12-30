@@ -105,7 +105,18 @@ export class DocumentState {
                     // addDiagnostic(link, `Link check passed.\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Hint);
                 }
             } else if (result.statusCode === 0) {
-                addDiagnostic(link, `Link check failed.\nLink: ${uriStr}\n${result.requestError}`, vscode.DiagnosticSeverity.Error);
+                //https://github.com/microsoft/vscode/issues/136787
+                if (result.requestError?.code === "CERT_HAS_EXPIRED") {
+                    addDiagnostic(
+                        link,
+                        `Link check failed.`
+                        + `\nElectron can not validate the certificate.`
+                        + ` It might be related to the bug https://github.com/microsoft/vscode/issues/136787.`
+                        + ` Until vscode upgrades to Electron 16, it is recommended to use setting '"http.systemCertificates": false'`
+                        + `\nLink: ${uriStr}\n${result.requestError}`, vscode.DiagnosticSeverity.Warning);
+                } else {
+                    addDiagnostic(link, `Link check failed.\nLink: ${uriStr}\n${result.requestError}`, vscode.DiagnosticSeverity.Error);
+                }
             } else {
                 addDiagnostic(link, `Link check failed. Status: ${result.statusCode}\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Error);
             }

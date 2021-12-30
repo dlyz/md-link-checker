@@ -6,8 +6,7 @@ import { Slug, Slugifier } from './slugify';
 import { performance } from 'perf_hooks';
 import { URL } from 'url';
 import { HostCredentialsStorage } from './HostCredentialsStorage';
-const linkCheck = require('link-check');
-//import fetch from 'node-fetch';
+import fetch, { Response } from 'node-fetch';
 
 export interface LinkCheckResult {
 	checkType: "web" | "file" | "none",
@@ -57,8 +56,7 @@ export class MainLinkChecker implements LinkChecker {
 		private readonly markdownParser: MarkdownParser,
 		private readonly hostCredentials: HostCredentialsStorage
 	) {
-		this.urlChecker = new LinkCheckUrlChecker();
-		//this.urlChecker = new NodeFetchUrlChecker();
+		this.urlChecker = new NodeFetchUrlChecker();
 	}
 
 
@@ -88,7 +86,7 @@ export class MainLinkChecker implements LinkChecker {
 					};
 				}
 
-				const pathFound = checkResult.status === "alive";
+				const pathFound = checkResult.alive;
 
 				const cc = hasCountryCode(link, options.countryCodeRegex);
 
@@ -271,63 +269,76 @@ function parseLink(
 interface UrlCheckResult {
 
 	err: any,
+	alive: boolean,
 	statusCode: number,
-	status: "alive" | "ignored" | "dead",
 }
 
-class LinkCheckUrlChecker {
 
-	checkUrl(url: string, authorization?: string): Promise<UrlCheckResult> {
 
-		return new Promise(async (resolve, reject) => {
+class NodeFetchUrlChecker {
 
-			const options = {
-				headers: {
+	async checkUrl(url: string, authorization?: string): Promise<UrlCheckResult> {
 
-				} as Record<string, string>
+		let headers;
+
+		if (authorization) {
+			headers = {
+				"Authorization": authorization,
 			};
+		}
 
-			if (authorization) {
-				options.headers["Authorization"] = authorization;
-			}
+		let response;
 
-			linkCheck(url, options, async (err: any, result: UrlCheckResult) => {
-				if (err) {
-					reject(err);
-				} else {
-					resolve(result);
-				}
+		try
+		{
+			response = await fetch(url, {
+				method: "HEAD",
+				headers
 			});
-		});
+		} catch (err) {
+			return createError(err);
+		}
+
+		if (shouldTryGetInsteadOfHead(response)) {
+			try
+			{
+				response = await fetch(url, {
+					method: "GET",
+					headers
+				});
+			} catch (err) {
+				return createError(err);
+			}
+		}
+
+		return createResult(response);
+
+		function isOk(response: Response) {
+			return response.status >= 200 && response.status < 300;
+		}
+
+		function shouldTryGetInsteadOfHead(response: Response) {
+			return response.status >= 400 && response.status < 500;
+		}
+
+		function createResult(response: Response): UrlCheckResult {
+			return {
+				statusCode: response.status,
+				alive: isOk(response),
+				err: undefined
+			};
+		}
+
+		function createError(err: any): UrlCheckResult {
+
+			return {
+				statusCode: 0,
+				alive: false,
+				err
+			};
+		}
 	}
 }
-
-
-// incomplete implementation, may be used later
-// class NodeFetchUrlChecker {
-
-// 	async checkUrl(url: string, authorization?: string): Promise<UrlCheckResult> {
-
-// 		const headers = {
-
-// 		} as Record<string, string>;
-
-// 		if (authorization) {
-// 			headers["Authorization"] = authorization;
-// 		}
-
-// 		let response = await fetch(url, {
-// 			method: "GET",
-// 			headers
-// 		});
-
-// 		return {
-// 			statusCode: response.status,
-// 			status: response.status >= 200 && response.status < 300 ? "alive" : "dead",
-// 			err: undefined
-// 		};
-// 	}
-// }
 
 
 function fileExists(filePath: string) {
@@ -353,6 +364,4 @@ function hasCountryCode(linkToCheck: string, regex: string | undefined): string 
 	const hasCountryCode = linkToCheck.match(regex);
 	return hasCountryCode?.[0];
 }
-
-
 

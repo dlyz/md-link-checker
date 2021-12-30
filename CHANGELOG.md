@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Per host authorization credentials
 
+### Changed
+
+- `link-check` replaced with custom implementation on top of `node-fetch`.
+
+### Fixed
+
+- False-positive `CERT_HAS_EXPIRED` case handled explicitly.
+  Added suggestion user based on <https://github.com/microsoft/vscode/issues/136787#issuecomment-969065291>.
+
 ## [0.0.2] - 2021-12-28
 
 ### Added
