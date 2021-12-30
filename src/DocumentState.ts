@@ -259,9 +259,9 @@ export class DocumentState {
 
                 if (result.pathFound) {
                     if (result.hasFragment && !result.fragmentFound) {
-                        addDiagnostic(link, `Document found, but fragment '#${result.uri?.fragment}' check failed.\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Error);
+                        addDiagnostic(link, `Document found, but fragment '#${result.uri?.fragment}' check failed.\nResolved link: ${uriStr}`, vscode.DiagnosticSeverity.Error);
                     } else {
-                        // addDiagnostic(link, `Link check passed.\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Hint);
+                        // addDiagnostic(link, `Link check passed.\nResolved link: ${uriStr}`, vscode.DiagnosticSeverity.Hint);
                     }
                 } else if (result.statusCode === 0) {
                     //https://github.com/microsoft/vscode/issues/136787
@@ -272,12 +272,12 @@ export class DocumentState {
                             + `\nElectron can not validate the certificate.`
                             + ` It might be related to the bug https://github.com/microsoft/vscode/issues/136787.`
                             + ` Until vscode upgrades to Electron 16, it is recommended to use setting '"http.systemCertificates": false'`
-                            + `\nLink: ${uriStr}\n${result.requestError}`, vscode.DiagnosticSeverity.Warning);
+                            + `\nResolved link: ${uriStr}\n${result.requestError}`, vscode.DiagnosticSeverity.Warning);
                     } else {
-                        addDiagnostic(link, `Link check failed.\nLink: ${uriStr}\n${result.requestError}`, vscode.DiagnosticSeverity.Error);
+                        addDiagnostic(link, `Link check failed.\nResolved link: ${uriStr}\n${result.requestError}`, vscode.DiagnosticSeverity.Error);
                     }
                 } else {
-                    addDiagnostic(link, `Link check failed. Status: ${result.statusCode}\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Error);
+                    addDiagnostic(link, `Link check failed. Status: ${result.statusCode}\nResolved link: ${uriStr}`, vscode.DiagnosticSeverity.Error);
                 }
 
                 if (result.countryCode) {

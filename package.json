@@ -3,7 +3,7 @@
   "publisher": "dlyz",
   "displayName": "Markdown Link Checker",
   "description": "Validates local and external links in markdown documents. Also checks links to heading in local files.",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "license": "MIT",
   "preview": true,
   "icon": "icon.png",
@@ -53,18 +53,27 @@
     ],
     "commands": [
       {
-        "command": "mdLinkChecker.manageHostCredentials",
-        "title": "Markdown Link Checker: Manage host credentials"
+        "command": "mdLinkChecker.recheckOpenedDocuments",
+        "title": "Markdown Link Checker: Recheck opened documents"
       },
       {
         "command": "mdLinkChecker.recheckDocument",
         "title": "Markdown Link Checker: Recheck current document"
+      },
+      {
+        "command": "mdLinkChecker.manageHostCredentials",
+        "title": "Markdown Link Checker: Manage host credentials"
       }
     ],
     "keybindings":[
       {
         "command": "mdLinkChecker.recheckDocument",
         "key": "Alt+L",
+        "when": "editorLangId == markdown"
+      },
+      {
+        "command": "mdLinkChecker.recheckOpenedDocuments",
+        "key": "Shift+Alt+L",
         "when": "editorLangId == markdown"
       }
     ]

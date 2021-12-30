@@ -33,6 +33,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
         }
     }));
 
+    ctx.subscriptions.push(vscode.commands.registerCommand("mdLinkChecker.recheckOpenedDocuments", async () => {
+        const document = vscode.window.activeTextEditor?.document;
+        if (document) {
+            await documents.reprocessExistingDocuments();
+        }
+    }));
+
+
     ctx.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration("mdLinkChecker")) {
             env.updateConfig(vscode.workspace.getConfiguration("mdLinkChecker"));

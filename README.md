@@ -1,18 +1,23 @@
 # Markdown Link Checker
 
-> ⚠️ Extension is in early preview!
-
 ![example](https://github.com/dlyz/md-link-checker/raw/main/example.png)
 
 Features:
 
-- validates http/https links
-  - supports basic/bearer authorization
-  - caches check result for 5 minutes (configurable)
-- validates links to local files
-  - supports heading link validation
+- http/https link validation
+  - basic/bearer authorization support
+- local files link validation
+  - heading link validation support (including cross-document links)
+  - live recheck of cross-document links support when linked document changes in the editor
+- live recheck support when document changes in the editor
+- caching of link check results (configurable, 5 min by default)
 
 Useful commands:
 
 - `Markdown Link Checker: Recheck current document` (`Alt+L`) - resets caches for current document and rechecks all the links.
+- `Markdown Link Checker: Recheck opened documents` (`Shift+Alt+L`) - resets caches for all opened documents and rechecks all the links.
 - `Markdown Link Checker: Manage host credentials` - allows to forget saved authorization credentials.
+
+Planned:
+
+- support link check report for all the files in the workspace
