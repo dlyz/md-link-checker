@@ -3,7 +3,7 @@
   "publisher": "dlyz",
   "displayName": "Markdown Link Checker",
   "description": "Validates local and external links in markdown documents. Also checks links to heading in local files.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "license": "MIT",
   "preview": true,
   "icon": "icon.png",
@@ -12,7 +12,8 @@
     "url": "https://github.com/dlyz/md-link-checker"
   },
   "engines": {
-    "vscode": "^1.63.0"
+    "vscode": "^1.63.0",
+    "node": "14.16.0"
   },
   "categories": [
     "Linters",
@@ -26,7 +27,8 @@
     "checker"
   ],
   "activationEvents": [
-    "onLanguage:markdown"
+    "onLanguage:markdown",
+    "onCommand:mdLinkChecker.manageHostCredentials"
   ],
   "main": "./out/main.js",
   "contributes": {
@@ -48,11 +50,17 @@
           }
         }
       }
+    ],
+    "commands": [
+      {
+        "command": "mdLinkChecker.manageHostCredentials",
+        "title": "Markdown Link Checker: Manage host credentials"
+      }
     ]
   },
   "scripts": {
     "vscode:prepublish": "yarn run compile",
-    "esbuild-base": "rimraf out && yarn run copy-onig && esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
+    "esbuild-base": "rimraf out && yarn run copy-onig && esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --external:kerberos --format=cjs --platform=node",
     "esbuild": "yarn run esbuild-base --sourcemap",
     "esbuild-watch": "yarn run esbuild-base --sourcemap --watch",
     "test-compile": "tsc -p ./",
@@ -82,7 +90,6 @@
   },
   "dependencies": {
     "link-check": "^5.0.1",
-    "node-fetch": "3.0.0",
     "vscode-oniguruma": "^1.6.1",
     "vscode-textmate": "^6.0.0"
   }

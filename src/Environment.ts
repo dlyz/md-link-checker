@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { HostCredentialsStorage } from './HostCredentialsStorage';
 import { LinkChecker, MainLinkChecker } from './LinkChecker';
 import { GrammarMarkdownParser, MarkdownParser } from './MarkdownParser';
 import { githubSlugifier, Slugifier } from './slugify';
@@ -15,17 +16,20 @@ export class Environment {
     private readonly _parser: GrammarMarkdownParser = new GrammarMarkdownParser(this.slugifier);
     public readonly parser: MarkdownParser = this._parser;
     public readonly linkChecker: LinkChecker;
-
+    public readonly hostCredentials: HostCredentialsStorage;
 
     constructor(
         config: vscode.WorkspaceConfiguration,
-        public readonly diagnostics: vscode.DiagnosticCollection
+        public readonly diagnostics: vscode.DiagnosticCollection,
+        context: vscode.ExtensionContext
     ) {
         this.configuration = this.updateConfig(config);
+        this.hostCredentials = new HostCredentialsStorage(context.secrets);
         this.linkChecker = new MainLinkChecker(
             () =>  this.configuration,
             this.slugifier,
-            this.parser
+            this.parser,
+            this.hostCredentials
         );
     }
 

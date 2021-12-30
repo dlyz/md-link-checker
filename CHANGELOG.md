@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Per host authorization credentials
+
 ## [0.0.2] - 2021-12-28
 
 ### Added

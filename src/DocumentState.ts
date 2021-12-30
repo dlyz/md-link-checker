@@ -59,7 +59,6 @@ export class DocumentState {
 
         const addDiagnostic = (link: MarkdownLink, message: string, severity: vscode.DiagnosticSeverity) => {
             diag.push(new vscode.Diagnostic(link.range, message, severity));
-            this.env.diagnostics.set(this.document.uri, diag);
         };
 
         const { links, headings } = //measurePerf("parsing", () =>
@@ -105,6 +104,8 @@ export class DocumentState {
                 } else {
                     // addDiagnostic(link, `Link check passed.\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Hint);
                 }
+            } else if (result.statusCode === 0) {
+                addDiagnostic(link, `Link check failed.\nLink: ${uriStr}\n${result.requestError}`, vscode.DiagnosticSeverity.Error);
             } else {
                 addDiagnostic(link, `Link check failed. Status: ${result.statusCode}\nLink: ${uriStr}`, vscode.DiagnosticSeverity.Error);
             }
@@ -126,6 +127,7 @@ export class DocumentState {
         }
 
         this.lastProcessedVersion = documentVersion;
+        this.env.diagnostics.set(this.document.uri, diag);
 
         // console.debug("processing completed: " + this.document.uri.toString());
     }

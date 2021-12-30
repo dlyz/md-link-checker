@@ -4,9 +4,10 @@ import * as path from 'path';
 import { MarkdownParser } from './MarkdownParser';
 import { Slug, Slugifier } from './slugify';
 import { performance } from 'perf_hooks';
+import { URL } from 'url';
+import { HostCredentialsStorage } from './HostCredentialsStorage';
 const linkCheck = require('link-check');
-// import fetch from 'node-fetch';
-
+//import fetch from 'node-fetch';
 
 export interface LinkCheckResult {
 	checkType: "web" | "file" | "none",
@@ -17,6 +18,7 @@ export interface LinkCheckResult {
 	hasFragment: boolean | null,
 	countryCode?: string,
 	checkFail?: any,
+	requestError?: any,
 }
 
 export interface LinkChecker {
@@ -44,16 +46,19 @@ export interface LinkSourceDocumentCache {
 }
 
 
+
 export class MainLinkChecker implements LinkChecker {
 
-	// private readonly urlChecker = new NodeFetchUrlChecker();
-	private readonly urlChecker = new LinkCheckUrlChecker();
+	private readonly urlChecker;
 
 	constructor(
 		private readonly optionsProvider: () => LinkCheckerOptions,
 		private readonly slugifier: Slugifier,
-		private readonly markdownParser: MarkdownParser
-		) {
+		private readonly markdownParser: MarkdownParser,
+		private readonly hostCredentials: HostCredentialsStorage
+	) {
+		this.urlChecker = new LinkCheckUrlChecker();
+		//this.urlChecker = new NodeFetchUrlChecker();
 	}
 
 
@@ -69,8 +74,9 @@ export class MainLinkChecker implements LinkChecker {
 
 				let checkResult;
 				try {
-					checkResult = await this.checkWebLink(document, link, options);
+					checkResult = await this.checkWebLinkWithCache(document, link, options);
 				} catch (checkFail) {
+
 					return {
 						checkFail,
 						checkType: "web",
@@ -94,6 +100,7 @@ export class MainLinkChecker implements LinkChecker {
 					fragmentFound: false,
 					countryCode: cc,
 					statusCode: checkResult.statusCode,
+					requestError: checkResult.err,
 				};
 
 			} else if (uri.scheme === "file" || uri.scheme === "untitled") {
@@ -146,7 +153,7 @@ export class MainLinkChecker implements LinkChecker {
 		};
 	};
 
-	checkWebLink(document: LinkSourceDocument, link: string, options: LinkCheckerOptions) {
+	private checkWebLinkWithCache(document: LinkSourceDocument, link: string, options: LinkCheckerOptions) {
 
 		let cacheEntry = document.getCachedLink(link) as LinkCacheEntry | undefined;
 		if (cacheEntry && cacheEntry.lastCheckTime !== -2) {
@@ -168,13 +175,15 @@ export class MainLinkChecker implements LinkChecker {
 			lastCheckTime: -1,
 		};
 
-		cacheEntry.resultPromise = this.urlChecker.checkUrl(link).then(
+		cacheEntry.resultPromise = this.checkWebLinkWithAuth(link).then(
 			result => {
 				cacheEntry!.lastCheckTime = performance.now();
+				console.log(link, result);
 				return result;
 			},
 			error => {
 				cacheEntry!.lastCheckTime = -2;
+				console.warn("link check failed", link, error);
 				throw error;
 			}
 		);
@@ -183,6 +192,23 @@ export class MainLinkChecker implements LinkChecker {
 		return cacheEntry.resultPromise;
 	}
 
+	async checkWebLinkWithAuth(url: string): Promise<UrlCheckResult> {
+
+		const parsedUrl = new URL(url);
+		let authString = await this.hostCredentials.tryGet(parsedUrl.host);
+
+		let result = await this.urlChecker.checkUrl(url, authString || undefined);
+
+		if (authString !== null && result.statusCode === 401) {
+			const authString = await this.hostCredentials.requestNew(parsedUrl.host);
+
+			if (authString) {
+				return await this.urlChecker.checkUrl(url, authString);
+			}
+		}
+
+		return result;
+	}
 }
 
 interface LinkCacheEntry {
@@ -251,11 +277,21 @@ interface UrlCheckResult {
 
 class LinkCheckUrlChecker {
 
-	checkUrl(url: string): Promise<UrlCheckResult> {
+	checkUrl(url: string, authorization?: string): Promise<UrlCheckResult> {
 
-		return new Promise((resolve, reject) => {
+		return new Promise(async (resolve, reject) => {
 
-			linkCheck(url, (err: any, result: any) => {
+			const options = {
+				headers: {
+
+				} as Record<string, string>
+			};
+
+			if (authorization) {
+				options.headers["Authorization"] = authorization;
+			}
+
+			linkCheck(url, options, async (err: any, result: UrlCheckResult) => {
 				if (err) {
 					reject(err);
 				} else {
@@ -266,19 +302,28 @@ class LinkCheckUrlChecker {
 	}
 }
 
+
 // incomplete implementation, may be used later
 // class NodeFetchUrlChecker {
 
-// 	async checkUrl(url: string): Promise<UrlCheckResult> {
+// 	async checkUrl(url: string, authorization?: string): Promise<UrlCheckResult> {
 
-// 		const resposne = await fetch(url, {
+// 		const headers = {
+
+// 		} as Record<string, string>;
+
+// 		if (authorization) {
+// 			headers["Authorization"] = authorization;
+// 		}
+
+// 		let response = await fetch(url, {
 // 			method: "GET",
+// 			headers
 // 		});
 
 // 		return {
-// 			lastCheckTime: 0,
-// 			statusCode: resposne.status,
-// 			status: resposne.status >= 200 && resposne.status < 300 ? "alive" : "dead",
+// 			statusCode: response.status,
+// 			status: response.status >= 200 && response.status < 300 ? "alive" : "dead",
 // 			err: undefined
 // 		};
 // 	}

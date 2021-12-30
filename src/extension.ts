@@ -12,10 +12,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
     const env = new Environment(
         vscode.workspace.getConfiguration("mdLinkChecker"),
-        diagnostics
+        diagnostics,
+        ctx
     );
 
     await env.initialize();
+    ctx.subscriptions.push(vscode.commands.registerCommand("mdLinkChecker.manageHostCredentials", async () => {
+        env.hostCredentials.manage();
+    }));
 
     const documents = new DocumentStore(env);
     ctx.subscriptions.push(documents);
