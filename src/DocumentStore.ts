@@ -136,10 +136,8 @@ class DocumentSubscriptionManager implements DocumentEventSource {
 
     onDocumentChanged(documentVersion: number | undefined) {
         this.version = documentVersion;
-        if (documentVersion !== undefined) {
-            for (const handler of this.handlers) {
-                handler();
-            }
+        for (const handler of this.handlers) {
+            handler();
         }
     }
 

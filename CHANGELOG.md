@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Complex heading processing (for example heading with inlined code segments).
 - Local heading changes handling.
+- Links recheck on linked files rename.
 
 ## [0.1.0] - 2021-12-31
 
