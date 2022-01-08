@@ -17,7 +17,3 @@ Useful commands:
 - `Markdown Link Checker: Recheck current document` (`Alt+L`) - resets caches for current document and rechecks all the links.
 - `Markdown Link Checker: Recheck opened documents` (`Shift+Alt+L`) - resets caches for all opened documents and rechecks all the links.
 - `Markdown Link Checker: Manage host credentials` - allows to forget saved authorization credentials.
-
-Planned:
-
-- support link check report for all the files in the workspace
