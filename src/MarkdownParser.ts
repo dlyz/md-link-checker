@@ -87,18 +87,25 @@ export class GrammarMarkdownParser implements MarkdownParser {
 		const headings: MarkdownHeading[] | undefined = options.parseHeadings ? [] : undefined;
 		const links: MarkdownLink[] | undefined = options.parseLinks ? [] : undefined;
 
-
-		const result: MarkdownParsingResult = { links: [], headings: [] };
-
 		let stack = null;
 		for (let lineIndex = 0; lineIndex < doc.lineCount; lineIndex++) {
 			const line = doc.lineAt(lineIndex);
 			const r = grammar.tokenizeLine(line, stack);
 			stack = r.ruleStack;
 
-			for (const token of r.tokens) {
+			for (let i = 0; i < r.tokens.length; ++i) {
+				const token = r.tokens[i];
 				if (headings && token.scopes.includes("entity.name.section.markdown")) {
-					const title = line.substring(token.startIndex, token.endIndex);
+
+					const start = token.startIndex;
+
+					// have to check consequent tokens in case of complex headings like "# q `w` e"
+					for(++i; i < r.tokens.length && r.tokens[i].scopes.includes("entity.name.section.markdown"); ++i);
+					--i;
+
+					const end = r.tokens[i].endIndex;
+
+					const title = line.substring(start, end);
 					headings.push({
 						title,
 						slugged: this.slugifier.fromHeading(title),

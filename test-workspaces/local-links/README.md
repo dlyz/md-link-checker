@@ -18,7 +18,8 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. Suspendisse semper sapi
 - [link](./file1.md#заголовок-на-русском)
 - [link](./folder/file2.md)
 
-[link](#from-contributingmd)
+- [link](#from-contributingmd)
+- [link](#complex-heading)
 
 ## From contributing.md
 
@@ -29,3 +30,6 @@ and this project adheres to [Semantic Versioning][semver].
 
 [semver]: https://semver.org/spec/v2.0.0.html
 [semver100500]: https://semver.org/spec/v100.500.0.html
+
+## Complex `heading`!
+
