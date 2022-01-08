@@ -56,21 +56,24 @@ export class DocumentState {
         this.linkCache.clear();
     }
 
+    parseDocument(): ParsedLinkedDocument {
+        return this.parseDocumentCore()[0];
+    }
+
     private parsed?: ParsedDocument;
 
-    parseDocument(): ParsedDocument {
+    private parseDocumentCore(): [ParsedDocument, boolean] {
 
         const documentVersion = this.document.version;
-        if (this.parsed && this.parsed.documentVersion === documentVersion) {
-            return this.parsed;
+        const prevParsed = this.parsed;
+        if (prevParsed && prevParsed.documentVersion === documentVersion) {
+            return [prevParsed, false];
         } else {
             // parsing should be synced with documentVersion
             const parsingResult = this.env.parser.parseDocument(
                 this.document,
                 { parseLinks: true, parseHeadings: true }
             );
-
-            const prevHeadings = this.parsed?.headings;
 
             const parsed = this.parsed = new ParsedDocument(
                 this.document.uri,
@@ -79,15 +82,16 @@ export class DocumentState {
                 parsingResult.links!
             );
 
-            if (prevHeadings
-                && prevHeadings.length === this.parsed.headings.length
-                && prevHeadings.every((h, i) => h.slugged.equals(parsed.headings[i].slugged))
-            ) {
-            } else {
+            const sameSluggedHeading = prevParsed
+                && prevParsed.headings.length === parsed.headings.length
+                && prevParsed.headings.every((h, i) => h.slugged.equals(parsed.headings[i].slugged))
+                ;
+
+            if (!sameSluggedHeading) {
                 this.eventSource.onDocumentChanged(documentVersion);
             }
 
-            return parsed;
+            return [parsed, !sameSluggedHeading];
         }
     }
 
@@ -106,7 +110,6 @@ export class DocumentState {
 
     private async processDocumentSeq() {
 
-        const force = this.resetCaches;
         if (this.resetCaches) {
             this.disposeLinkCache();
             this.parsed = undefined;
@@ -124,7 +127,18 @@ export class DocumentState {
 
         // console.debug("processing: " + this.document.uri.toString());
 
-        const parsed = this.parseDocument();
+        const [parsed, sluggedHeadingChanged] = this.parseDocumentCore();
+
+        if (sluggedHeadingChanged) {
+            // we do not subscribe to self heading changes (unlike for other docs),
+            // so we have to manually remove local links from the cache
+            // to recheck them
+            for (const kv of this.linkCache) {
+                if (kv[1].localLink) {
+                    this.linkCache.delete(kv[0]);
+                }
+            }
+        }
 
         const results = await Promise.all(parsed.links.map(
             l => this.checkLinkWithCache(l.address, parsed)
@@ -150,14 +164,6 @@ export class DocumentState {
         // console.debug("processing completed: " + this.document.uri.toString());
     }
 
-
-
-    processChanges(event: vscode.TextDocumentChangeEvent) {
-        this.processDocument();
-    }
-
-
-
 	private checkLinkWithCache(link: string, parsedDoc: ParsedDocument) {
 
 		let cacheEntry = this.linkCache.get(link);
@@ -165,7 +171,7 @@ export class DocumentState {
 
             cacheEntry.lastVisitDocVersion = parsedDoc.documentVersion;
 
-			// if still running
+			// if still running: could be only during same processing iteration
 			if (cacheEntry.lastCheckTime === -1) {
 				return cacheEntry.resultPromise;
 			}
@@ -196,6 +202,8 @@ export class DocumentState {
                     if (result.linkedDocument.uri.toString() !== parsedDoc.uri.toString()) {
                         observable = this.documentObservableProvider(result.linkedDocument.uri);
                         version = result.linkedDocument.documentVersion;
+                    } else {
+                        cacheEntry!.localLink = true;
                     }
 
                 } else {
@@ -312,6 +320,7 @@ interface LinkCacheEntry {
 	lastCheckTime: number,
     lastVisitDocVersion: number,
     linkedDocSubscription?: () => void,
+    localLink?: true,
 }
 
 
