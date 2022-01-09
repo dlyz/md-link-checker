@@ -18,18 +18,27 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit. Suspendisse semper sapi
 - [link](./file1.md#заголовок-на-русском)
 - [link](./folder/file2.md)
 
-- [link](#from-contributingmd)
-- [link](#complex-heading)
+- [link](#from-changelogmd)
+- [link](#complex-heading-x)
 
-## From contributing.md
+## From CHANGELOG.md
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning][semver].
 
-[semver100500].
+[semver 100500] [semver]
 
 [semver]: https://semver.org/spec/v2.0.0.html
-[semver100500]: https://semver.org/spec/v100.500.0.html
+[semver 100500]: https://semver.org/spec/v100.500.0.html
 
-## Complex `heading`!
+## Complex `heading`! [x]
 
+[absent reference] [absent reference][absent reference].
+
+[ ] [x] [X]
+
+- [ ] task 1
+- [x] task 2
+- [X] task 3
+
+[a][b][c][d][e]

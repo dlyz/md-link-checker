@@ -508,6 +508,9 @@
 					"include": "#link-ref-literal"
 				},
 				{
+					"include": "#checkbox"
+				},
+				{
 					"include": "#link-ref-shortcut"
 				}
 			]
@@ -876,8 +879,12 @@
 					"name": "punctuation.definition.string.end.markdown"
 				}
 			},
-			"match": "(\\[)(\\S+?)(\\])",
-			"name": "meta.link.reference.markdown"
+			"match": "(\\[)([\\S\\t ]+?)(\\])",
+			"name": "meta.link.reference.shortcut.markdown"
+		},
+		"checkbox": {
+			"match": "\\[[xX ]\\]",
+			"name": "meta.checkbox.markdown"
 		},
 		"raw": {
 			"captures": {

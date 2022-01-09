@@ -1,12 +1,23 @@
 import * as vscode from 'vscode';
-import { IGrammar } from 'vscode-textmate';
+import { IGrammar, IToken } from 'vscode-textmate';
 import { Slugifier, Slug } from './slugify';
 import { GrammarProvider } from './textmate/GrammarProvider';
 import { getEmbeddedGrammarDescriptor, markdownScopeName } from './textmate/MarkdownGrammar';
 
 export interface MarkdownLink {
-	range: vscode.Range,
+	addressRange: vscode.Range,
 	address: string,
+}
+
+
+export interface MarkdownLinkRef {
+	nameRange: vscode.Range,
+	name: string,
+}
+
+export interface MarkdownLinkDef {
+	nameRange: vscode.Range,
+	name: string,
 }
 
 export interface MarkdownHeading {
@@ -17,6 +28,8 @@ export interface MarkdownHeading {
 export interface MarkdownParsingResult {
 	links?: MarkdownLink[],
 	headings?: MarkdownHeading[],
+	linkRefs?: MarkdownLinkRef[],
+	linkDefs?: MarkdownLinkDef[],
 }
 
 interface SlimDocument {
@@ -40,10 +53,17 @@ function makeSlimDocument(document: vscode.TextDocument | string): SlimDocument 
 	}
 }
 
+export interface MarkdownParsingOptions {
+	parseHeadings?: boolean,
+	parseLinks?: boolean,
+	parseLinkRefs?: boolean,
+	parseLinkDefs?: boolean,
+}
+
 export interface MarkdownParser {
 	parseDocument(
 		document: vscode.TextDocument | string,
-		options: { parseLinks?: boolean, parseHeadings?: boolean }
+		options: MarkdownParsingOptions
 	): MarkdownParsingResult;
 }
 
@@ -78,14 +98,18 @@ export class GrammarMarkdownParser implements MarkdownParser {
 
 	parseDocument(
 		document: vscode.TextDocument | string,
-		options: { parseLinks?: boolean, parseHeadings?: boolean }
+		options: MarkdownParsingOptions
 	): MarkdownParsingResult {
 
 		const grammar = this.grammar!;
 		const doc = makeSlimDocument(document);
 
-		const headings: MarkdownHeading[] | undefined = options.parseHeadings ? [] : undefined;
-		const links: MarkdownLink[] | undefined = options.parseLinks ? [] : undefined;
+		const result: MarkdownParsingResult = {
+			headings: options.parseHeadings ? [] : undefined,
+			links: options.parseLinks ? [] : undefined,
+			linkRefs: options.parseLinkRefs ? [] : undefined,
+			linkDefs: options.parseLinkDefs ? [] : undefined,
+		};
 
 		let stack = null;
 		for (let lineIndex = 0; lineIndex < doc.lineCount; lineIndex++) {
@@ -95,40 +119,89 @@ export class GrammarMarkdownParser implements MarkdownParser {
 
 			for (let i = 0; i < r.tokens.length; ++i) {
 				const token = r.tokens[i];
-				if (headings && token.scopes.includes("entity.name.section.markdown")) {
+				if (result.headings && isHeadingToken(token)) {
 
 					const start = token.startIndex;
 
 					// have to check consequent tokens in case of complex headings like "# q `w` e"
-					for(++i; i < r.tokens.length && r.tokens[i].scopes.includes("entity.name.section.markdown"); ++i);
+					for(++i; i < r.tokens.length && isHeadingToken(r.tokens[i]); ++i);
 					--i;
 
 					const end = r.tokens[i].endIndex;
 
 					const title = line.substring(start, end);
-					headings.push({
+					result.headings.push({
 						title,
 						slugged: this.slugifier.fromHeading(title),
 					});
 				}
 
-				if (links && (token.scopes.includes("markup.underline.link.markdown") || token.scopes.includes("markup.underline.link.image.markdown"))) {
+				if (result.links && isLinkAddressToken(token)) {
 					const address = line.substring(token.startIndex, token.endIndex);
-					links.push({
+					result.links.push({
 						address,
-						range: new vscode.Range(
-							new vscode.Position(lineIndex, token.startIndex),
-							new vscode.Position(lineIndex, token.endIndex),
-						),
+						addressRange: makeRange(lineIndex, token),
 					});
 				}
 
+				if (result.linkRefs && isLinkRefNameToken(token)) {
+					const name = line.substring(token.startIndex, token.endIndex);
+					result.linkRefs.push({
+						name,
+						nameRange: makeRange(lineIndex, token),
+					});
+				}
+
+				if (result.linkDefs && isLinkDefNameToken(token)) {
+					const name = line.substring(token.startIndex, token.endIndex);
+					result.linkDefs.push({
+						name,
+						nameRange: makeRange(lineIndex, token),
+					});
+				}
 			}
 
 			//console.debug((index + 1) + ": ", r.tokens.map(t => t.scopes.join(" ")));
 		}
 
-		return { links, headings };
+		return result;
 	}
 
 }
+
+function makeRange(lineIndex: number, token: IToken) {
+	return new vscode.Range(
+		new vscode.Position(lineIndex, token.startIndex),
+		new vscode.Position(lineIndex, token.endIndex),
+	);
+}
+
+function isHeadingToken(token: IToken) {
+	return token.scopes.includes("entity.name.section.markdown");
+}
+
+function isLinkAddressToken(token: IToken) {
+	return token.scopes.includes("markup.underline.link.markdown")
+		|| token.scopes.includes("markup.underline.link.image.markdown")
+	;
+}
+
+
+function isLinkRefNameToken(token: IToken) {
+	return (
+			token.scopes.includes("constant.other.reference.link.markdown")
+			&& token.scopes.includes("meta.link.reference.markdown")
+		) || (
+			token.scopes.includes("meta.link.reference.shortcut.markdown")
+			&& token.scopes.includes("string.other.link.title.markdown")
+		)
+	;
+}
+
+function isLinkDefNameToken(token: IToken) {
+	return token.scopes.includes("constant.other.reference.link.markdown")
+		&& token.scopes.includes("meta.link.reference.def.markdown")
+	;
+}
+
+

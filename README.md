@@ -9,6 +9,7 @@ Features:
 - local files link validation
   - heading link validation support (including cross-document links)
   - live recheck of cross-document links support when linked document changes in the editor
+- reference link validation
 - live recheck support when document changes in the editor
 - caching of link check results (configurable, 5 min by default)
 
