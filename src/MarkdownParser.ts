@@ -7,6 +7,7 @@ import { getEmbeddedGrammarDescriptor, markdownScopeName } from './textmate/Mark
 export interface MarkdownLink {
 	addressRange: vscode.Range,
 	address: string,
+	isInline: boolean,
 }
 
 
@@ -30,6 +31,8 @@ export interface MarkdownParsingResult {
 	headings?: MarkdownHeading[],
 	linkRefs?: MarkdownLinkRef[],
 	linkDefs?: MarkdownLinkDef[],
+	lastNonEmptyLine: number,
+	endsWithLinkDef: boolean,
 }
 
 interface SlimDocument {
@@ -109,8 +112,11 @@ export class GrammarMarkdownParser implements MarkdownParser {
 			links: options.parseLinks ? [] : undefined,
 			linkRefs: options.parseLinkRefs ? [] : undefined,
 			linkDefs: options.parseLinkDefs ? [] : undefined,
+			endsWithLinkDef: false,
+			lastNonEmptyLine: -1,
 		};
 
+		let lastNonEmptyToken;
 		let stack = null;
 		for (let lineIndex = 0; lineIndex < doc.lineCount; lineIndex++) {
 			const line = doc.lineAt(lineIndex);
@@ -136,15 +142,16 @@ export class GrammarMarkdownParser implements MarkdownParser {
 					});
 				}
 
-				if (result.links && isLinkAddressToken(token)) {
+				else if (result.links && isLinkAddressToken(token)) {
 					const address = line.substring(token.startIndex, token.endIndex);
 					result.links.push({
 						address,
 						addressRange: makeRange(lineIndex, token),
+						isInline: isInlineLink(token),
 					});
 				}
 
-				if (result.linkRefs && isLinkRefNameToken(token)) {
+				else if (result.linkRefs && isLinkRefNameToken(token)) {
 					const name = line.substring(token.startIndex, token.endIndex);
 					result.linkRefs.push({
 						name,
@@ -152,17 +159,24 @@ export class GrammarMarkdownParser implements MarkdownParser {
 					});
 				}
 
-				if (result.linkDefs && isLinkDefNameToken(token)) {
+				else if (result.linkDefs && isLinkDefNameToken(token)) {
 					const name = line.substring(token.startIndex, token.endIndex);
 					result.linkDefs.push({
 						name,
 						nameRange: makeRange(lineIndex, token),
 					});
 				}
+
+				if (!isEmptyToken(token)) {
+					result.lastNonEmptyLine = lineIndex;
+					lastNonEmptyToken = token;
+				}
 			}
 
 			//console.debug((index + 1) + ": ", r.tokens.map(t => t.scopes.join(" ")));
 		}
+
+		result.endsWithLinkDef = lastNonEmptyToken && isLinkDefToken(lastNonEmptyToken) || false;
 
 		return result;
 	}
@@ -186,6 +200,10 @@ function isLinkAddressToken(token: IToken) {
 	;
 }
 
+function isInlineLink(token: IToken) {
+	return token.scopes.includes("meta.link.inline.markdown");
+}
+
 
 function isLinkRefNameToken(token: IToken) {
 	return (
@@ -202,6 +220,14 @@ function isLinkDefNameToken(token: IToken) {
 	return token.scopes.includes("constant.other.reference.link.markdown")
 		&& token.scopes.includes("meta.link.reference.def.markdown")
 	;
+}
+
+function isLinkDefToken(token: IToken) {
+	return token.scopes.includes("meta.link.reference.def.markdown");
+}
+
+function isEmptyToken(token: IToken) {
+	return token.scopes.length <= 1;
 }
 
 

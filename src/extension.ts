@@ -66,6 +66,28 @@ export async function activate(ctx: vscode.ExtensionContext) {
         }
     }));
 
+    ctx.subscriptions.push(vscode.languages.registerRenameProvider({ language: "markdown"}, {
+        provideRenameEdits: (doc, pos, newName) => {
+            const state = documents.getOrOpenDocument(doc);
+            if (state) {
+                return state.renameLinkRefNameAt(pos, newName);
+            } else {
+                return undefined;
+            }
+        },
+        prepareRename: (doc, pos) => {
+            const state = documents.getOrOpenDocument(doc);
+            if (state) {
+                const range = state.canRenameLinkRefNameAt(pos);
+                if (range) return range;
+            }
+
+            // we have to throw to indicate we can not rename here.
+            // undefined return means use default word definition to rename.
+            throw new Error("Nothing to rename here");
+        }
+    }));
+
     console.log("md-link-checker is active");
 }
 

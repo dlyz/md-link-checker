@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { Environment } from './Environment';
-import { MarkdownHeading, MarkdownLink, MarkdownLinkDef, MarkdownLinkRef } from './MarkdownParser';
+import { MarkdownHeading, MarkdownLink, MarkdownLinkDef, MarkdownLinkRef, MarkdownParsingResult } from './MarkdownParser';
 import { performance } from 'perf_hooks';
 import { LinkCheckResult, LinkSourceDocument, ParsedLinkedDocument } from './LinkChecker';
 import { Slug } from './slugify';
@@ -57,17 +57,17 @@ export class DocumentState {
     }
 
     parseDocument(): ParsedLinkedDocument {
-        return this.parseDocumentCore()[0];
+        return this.parseDocumentCore();
     }
 
     private parsed?: ParsedDocument;
 
-    private parseDocumentCore(): [ParsedDocument, boolean] {
+    private parseDocumentCore(): ParsedDocument {
 
         const documentVersion = this.document.version;
         const prevParsed = this.parsed;
         if (prevParsed && prevParsed.documentVersion === documentVersion) {
-            return [prevParsed, false];
+            return prevParsed;
         } else {
             // parsing should be synced with documentVersion
             const parsingResult = this.env.parser.parseDocument(
@@ -87,18 +87,15 @@ export class DocumentState {
                 parsingResult.links!,
                 parsingResult.linkRefs!,
                 parsingResult.linkDefs!,
+                parsingResult.lastNonEmptyLine,
+                parsingResult.endsWithLinkDef,
             );
 
-            const sameSluggedHeading = prevParsed
-                && prevParsed.headings.length === parsed.headings.length
-                && prevParsed.headings.every((h, i) => h.slugged.equals(parsed.headings[i].slugged))
-                ;
-
-            if (!sameSluggedHeading) {
+            if (sluggedHeadersChanged(prevParsed, parsed)) {
                 this.eventSource.onDocumentChanged(documentVersion);
             }
 
-            return [parsed, !sameSluggedHeading];
+            return parsed;
         }
     }
 
@@ -113,30 +110,30 @@ export class DocumentState {
         this.lastProcessing = continueWith(this.lastProcessing, this.processDocumentSeq.bind(this));
     }
 
-    private lastProcessedVersion = -1;
+    private lastProcessedDocument?: ParsedDocument;
 
     private async processDocumentSeq() {
 
         if (this.resetCaches) {
             this.disposeLinkCache();
             this.parsed = undefined;
-            this.lastProcessedVersion = -1;
+            this.lastProcessedDocument = undefined;
             this.resetCaches = false;
             this.resetLastProcessed = false;
         } else if (this.resetLastProcessed) {
-            this.lastProcessedVersion = -1;
+            this.lastProcessedDocument = undefined;
             this.resetLastProcessed = false;
         }
 
-        if (this.document.version === this.lastProcessedVersion) {
+        if (this.document.version === this.lastProcessedDocument?.documentVersion) {
             return;
         }
 
         // console.debug("processing: " + this.document.uri.toString());
 
-        const [parsed, sluggedHeadingChanged] = this.parseDocumentCore();
+        const parsed = this.parseDocumentCore();
 
-        if (sluggedHeadingChanged) {
+        if (sluggedHeadersChanged(this.lastProcessedDocument, parsed)) {
             // we do not subscribe to self heading changes (unlike for other docs),
             // so we have to manually remove local links from the cache
             // to recheck them
@@ -170,7 +167,7 @@ export class DocumentState {
 
         this.env.diagnostics.set(this.document.uri, diag);
 
-        this.lastProcessedVersion = parsed.documentVersion;
+        this.lastProcessedDocument = parsed;
 
         // console.debug("processing completed: " + this.document.uri.toString());
     }
@@ -242,8 +239,8 @@ export class DocumentState {
 			},
 			error => {
 				cacheEntry!.lastCheckTime = -2;
-				console.warn("link check failed. doc: " + this.document.uri, link, error);
-				throw error;
+				console.error(`link check failed. doc: ${this.document.uri} link: ${link}`, error);
+				return undefined;
 			}
 		);
 
@@ -252,10 +249,13 @@ export class DocumentState {
 	}
 
 
-    private gatherDiagnostics(diag: vscode.Diagnostic[], links: MarkdownLink[], results: LinkCheckResult[]) {
+    private gatherDiagnostics(diag: vscode.Diagnostic[], links: MarkdownLink[], results: Array<LinkCheckResult | undefined>) {
 
         for (let index = 0; index < links.length; index++) {
-            gather(links[index], results[index]);
+            const res = results[index];
+            if (res) {
+                gather(links[index], res);
+            }
         }
 
         return diag;
@@ -346,6 +346,111 @@ export class DocumentState {
 
         return diag;
     }
+
+
+    canRenameLinkRefNameAt(pos: vscode.Position): { range: vscode.Range, placeholder: string} | undefined {
+        const parsed = this.parseDocumentCore();
+        if (!parsed) return undefined;
+
+        const link = this.getInlineLinkAddressAt(parsed, pos);
+        if (link) {
+            return { range: link.addressRange, placeholder: 'link-ref-name' };
+        }
+
+        const linkRefOrDef = this.getLinkRefNameAt(parsed, pos) ?? this.getLinkDefNameAt(parsed, pos);
+        if (linkRefOrDef) {
+            return { range: linkRefOrDef.nameRange, placeholder: linkRefOrDef.name };
+        }
+
+        return undefined;
+    }
+
+    renameLinkRefNameAt(pos: vscode.Position, linkRefName: string): vscode.WorkspaceEdit | undefined {
+        const parsed = this.parseDocumentCore();
+        if (!parsed) return undefined;
+
+        const docUri = this.document.uri;
+
+        const link = this.getInlineLinkAddressAt(parsed, pos);
+
+        if (link) {
+
+            const edit = new vscode.WorkspaceEdit();
+
+            const replaceRange = new vscode.Range(
+                link.addressRange.start.translate(undefined, -1),
+                link.addressRange.end.translate(undefined, 1)
+            );
+
+            edit.replace(docUri, replaceRange, `[${linkRefName}]`);
+
+            const line = this.document.lineAt(parsed.lastNonEmptyLine === -1
+                ? (this.document.lineCount - 1)
+                : parsed.lastNonEmptyLine
+            );
+
+            const prefix = parsed.endsWithLinkDef ? "" : "\n";
+
+            edit.insert(docUri, line.range.end, `${prefix}\n[${linkRefName}]: ${link.address}`);
+
+            return edit;
+        }
+
+        const linkRefOrDef = this.getLinkRefNameAt(parsed, pos) ?? this.getLinkDefNameAt(parsed, pos);
+        if (linkRefOrDef) {
+            const edit = new vscode.WorkspaceEdit();
+
+            for (const linkRef of parsed.linkRefs) {
+                if (linkRef.name === linkRefOrDef.name) {
+                    edit.replace(docUri, linkRef.nameRange, linkRefName);
+                }
+            }
+
+            for (const linkDef of parsed.linkDefs) {
+                if (linkDef.name === linkRefOrDef.name) {
+                    edit.replace(docUri, linkDef.nameRange, linkRefName);
+                }
+            }
+
+            return edit;
+        }
+
+        return undefined;
+    }
+
+    private getLinkRefNameAt(parsed: ParsedDocument, pos: vscode.Position) {
+
+        for (const linkRef of parsed.linkRefs) {
+            if (linkRef.nameRange.contains(pos)) {
+                return linkRef;
+            }
+        }
+
+        return undefined;
+    }
+
+    private getLinkDefNameAt(parsed: ParsedDocument, pos: vscode.Position) {
+
+        for (const linkDef of parsed.linkDefs) {
+            if (linkDef.nameRange.contains(pos)) {
+                return linkDef;
+            }
+        }
+
+        return undefined;
+    }
+
+    private getInlineLinkAddressAt(parsed: ParsedDocument, pos: vscode.Position): MarkdownLink | undefined {
+
+        for (const link of parsed.links) {
+            if (link.isInline && link.addressRange.contains(pos)) {
+                return link;
+            }
+        }
+
+        return undefined;
+    }
+
 }
 
 
@@ -357,6 +462,8 @@ class ParsedDocument implements ParsedLinkedDocument {
         public readonly links: MarkdownLink[],
         public readonly linkRefs: MarkdownLinkRef[],
         public readonly linkDefs: MarkdownLinkDef[],
+        public readonly lastNonEmptyLine: number,
+        public readonly endsWithLinkDef: boolean,
     ) {
 
     }
@@ -366,8 +473,21 @@ class ParsedDocument implements ParsedLinkedDocument {
     }
 }
 
+function sluggedHeadersChanged(before: ParsedDocument | undefined, after: ParsedDocument | undefined) {
+    if (!before || !after) return true;
+    if (before === after) return false;
+
+    const sameSluggedHeading = before
+        && before.headings.length === after.headings.length
+        && before.headings.every((h, i) => h.slugged.equals(after.headings[i].slugged))
+    ;
+
+    return !sameSluggedHeading;
+}
+
+
 interface LinkCacheEntry {
-	resultPromise: Promise<LinkCheckResult>,
+	resultPromise: Promise<LinkCheckResult | undefined>,
 	// -1: in progress, -2: promise failed
 	lastCheckTime: number,
     lastVisitDocVersion: number,

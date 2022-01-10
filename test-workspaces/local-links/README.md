@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning][semver].
 
 [semver 100500] [semver]
+<https://semver.org/spec/v2.0.0.html>
 
 [semver]: https://semver.org/spec/v2.0.0.html
 [semver 100500]: https://semver.org/spec/v100.500.0.html

@@ -65,7 +65,12 @@ export class MainLinkChecker implements LinkChecker {
 	checkLink(document: LinkSourceDocument, link: string): Promise<LinkCheckResult> {
 		const options = this.optionsProvider();
 
-		const uri = parseLink(document, link);
+		let uri;
+		try {
+			uri = parseLink(document, link);
+		} catch (e) {
+			return Promise.reject(e);
+		}
 
 		if (uri) {
 			if (uri.scheme === "http" || uri.scheme === "https") {
@@ -202,13 +207,19 @@ function parseLink(
 			resourceUri = vscode.Uri.joinPath(root, tempUri.path);
 		}
 	} else {
-		if (document.uri.scheme === "untitled") {
+
+		let documentUri = document.uri;
+		if (documentUri.scheme === "vscode-bulkeditpreview") {
+			documentUri = vscode.Uri.parse(documentUri.query);
+		}
+
+		if (documentUri.scheme === "untitled") {
 			const root = document.workspaceFolder;
 			if (root) {
 				resourceUri = vscode.Uri.joinPath(root, tempUri.path);
 			}
 		} else {
-			const base = document.uri.with({ path: path.dirname(document.uri.fsPath) });
+			const base = documentUri.with({ path: path.dirname(documentUri.fsPath) });
 			resourceUri = vscode.Uri.joinPath(base, tempUri.path);
 		}
 	}

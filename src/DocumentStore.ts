@@ -41,6 +41,10 @@ export class DocumentStore {
         return !!state;
     };
 
+    getOrOpenDocument = (document: vscode.TextDocument) => {
+        return this.getOrCreateDocumentState(document);
+    };
+
     removeDocument = (document: vscode.TextDocument) => {
 
         const state = this.documents.get(document);
