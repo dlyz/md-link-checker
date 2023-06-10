@@ -172,36 +172,37 @@ export class DocumentState {
         // console.debug("processing completed: " + this.document.uri.toString());
     }
 
-	private checkLinkWithCache(link: string, parsedDoc: ParsedDocument) {
+    private checkLinkWithCache(link: string, parsedDoc: ParsedDocument) {
 
-		let cacheEntry = this.linkCache.get(link);
-		if (cacheEntry && cacheEntry.lastCheckTime !== -2) {
+        let cacheEntry = this.linkCache.get(link);
+        if (cacheEntry && cacheEntry.lastCheckTime !== -2) {
 
             cacheEntry.lastVisitDocVersion = parsedDoc.documentVersion;
 
-			// if still running: could be only during same processing iteration
-			if (cacheEntry.lastCheckTime === -1) {
-				return cacheEntry.resultPromise;
-			}
+            // if still running: could be only during same processing iteration
+            if (cacheEntry.lastCheckTime === -1) {
+                return cacheEntry.resultPromise;
+            }
 
-			const now = performance.now();
-			const ttl = (this.env.configuration.cacheTtl ?? 5*60)*1000;
-			if (now - cacheEntry.lastCheckTime <= ttl) {
-				return cacheEntry.resultPromise;
-			}
+            const now = performance.now();
+            const ttl = (this.env.configuration.cacheTtl ?? 5 * 60) * 1000;
+            if (now - cacheEntry.lastCheckTime <= ttl) {
+                return cacheEntry.resultPromise;
+            }
 
             cacheEntry.linkedDocSubscription?.();
-		}
+        }
 
-		cacheEntry = {
-			resultPromise: null!,
-			lastCheckTime: -1,
+        cacheEntry = {
+            resultPromise: null!,
+            lastCheckTime: -1,
             lastVisitDocVersion: parsedDoc.documentVersion,
-		};
+        };
 
-		cacheEntry.resultPromise = this.env.linkChecker.checkLink(this.linkSourceDocument, link).then(
-			result => {
-				cacheEntry!.lastCheckTime = performance.now();
+        cacheEntry.resultPromise = this.env.linkChecker.checkLink(this.linkSourceDocument, link).then(
+            result => {
+                cacheEntry!.lastCheckTime = performance.now();
+                cacheEntry!.documentHeadings = result.documentHeadings;
 
                 let version;
                 let observable;
@@ -234,19 +235,19 @@ export class DocumentState {
                     });
                 }
 
-				console.log("doc: " + this.document.uri, link, result);
-				return result;
-			},
-			error => {
-				cacheEntry!.lastCheckTime = -2;
-				console.error(`link check failed. doc: ${this.document.uri} link: ${link}`, error);
-				return undefined;
-			}
-		);
+                console.log("doc: " + this.document.uri, link, result);
+                return result;
+            },
+            error => {
+                cacheEntry!.lastCheckTime = -2;
+                console.error(`link check failed. doc: ${this.document.uri} link: ${link}`, error);
+                return undefined;
+            }
+        );
 
-		this.linkCache.set(link, cacheEntry);
-		return cacheEntry.resultPromise;
-	}
+        this.linkCache.set(link, cacheEntry);
+        return cacheEntry.resultPromise;
+    }
 
 
     private gatherDiagnostics(diag: vscode.Diagnostic[], links: MarkdownLink[], results: Array<LinkCheckResult | undefined>) {
@@ -348,7 +349,7 @@ export class DocumentState {
     }
 
 
-    canRenameLinkRefNameAt(pos: vscode.Position): { range: vscode.Range, placeholder: string} | undefined {
+    canRenameLinkRefNameAt(pos: vscode.Position): { range: vscode.Range, placeholder: string } | undefined {
         const parsed = this.parseDocumentCore();
         if (!parsed) return undefined;
 
@@ -451,12 +452,96 @@ export class DocumentState {
         return undefined;
     }
 
+    getCodeActions(range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] | undefined {
+
+        const parsed = this.parseDocumentCore();
+
+        for (const link of parsed.links) {
+            if (link.addressRange.contains(range.end)) {
+
+                const cacheEntry = this.linkCache.get(link.address);
+
+                if (!cacheEntry?.documentHeadings) return undefined;
+
+                const prefixIndex = link.address.indexOf('#');
+                if (prefixIndex === -1) return undefined;
+
+                const prefix = link.address.substring(0, prefixIndex + 1);
+
+                const currentNormName = toSearchItem(this.env.slugifier.fromHeading(link.address.slice(prefixIndex + 1)));
+
+                let lcsRow1 = Array<number>(currentNormName.length + 1);
+                let lcsRow2 = Array<number>(currentNormName.length + 1).fill(0);
+
+                function longestCommonSubsequence(s1: string) {
+                    const s2 = currentNormName;
+
+                    if (s1.length * s2.length > 10**6) return 0;
+
+                    lcsRow1.fill(0);
+                    for (let i = 0; i < s1.length; i++) {
+                        const c1 = s1[i];
+
+                        for (let j = 1; j <= s2.length; j++) {
+                            const c2 = s2[j - 1];
+
+                            let ans = Math.max(lcsRow1[j], lcsRow2[j - 1]);
+                            if (c2 === c1) {
+                                ans = Math.max(ans, lcsRow1[j - 1] + 1);
+                            }
+
+                            lcsRow2[j] = ans;
+                        }
+
+                        // swap
+                        [lcsRow1, lcsRow2] = [lcsRow2, lcsRow1];
+                    }
+
+                    return lcsRow1[s2.length];
+                }
+
+                const actions = cacheEntry.documentHeadings
+                    .map(h => {
+                        const newText = prefix + this.env.slugifier.fromHeadingNoEncoding(h.title);
+
+                        const action = new vscode.CodeAction(
+                            newText,
+                            vscode.CodeActionKind.QuickFix
+                        );
+
+                        action.edit = new vscode.WorkspaceEdit();
+                        action.edit.replace(parsed.uri, link.addressRange, newText);
+
+                        const normName = toSearchItem(h.slugged);
+                        const lcs = longestCommonSubsequence(normName) / currentNormName.length;
+
+                        // this value is bad only for long current values and short suggestions
+                        const lenShortage = Math.max(0, currentNormName.length - normName.length) / currentNormName.length;
+
+                        return { action, lcs, lenShortage };
+                    });
+
+                return actions
+                    .filter(r => r.lenShortage < 0.5 && r.lcs >= 0.5)
+                    .sort((a, b) => b.lcs - a.lcs)
+                    .map(r => r.action);
+            }
+        }
+
+        function toSearchItem(slug: Slug) {
+            return slug.value.replace(/\-/g, '');
+        }
+
+
+        return undefined;
+    }
+
 }
 
 
 class ParsedDocument implements ParsedLinkedDocument {
     constructor(
-	    public readonly uri: vscode.Uri,
+        public readonly uri: vscode.Uri,
         public readonly documentVersion: number,
         public readonly headings: MarkdownHeading[],
         public readonly links: MarkdownLink[],
@@ -480,25 +565,26 @@ function sluggedHeadersChanged(before: ParsedDocument | undefined, after: Parsed
     const sameSluggedHeading = before
         && before.headings.length === after.headings.length
         && before.headings.every((h, i) => h.slugged.equals(after.headings[i].slugged))
-    ;
+        ;
 
     return !sameSluggedHeading;
 }
 
 
 interface LinkCacheEntry {
-	resultPromise: Promise<LinkCheckResult | undefined>,
-	// -1: in progress, -2: promise failed
-	lastCheckTime: number,
+    resultPromise: Promise<LinkCheckResult | undefined>,
+    // -1: in progress, -2: promise failed
+    lastCheckTime: number,
     lastVisitDocVersion: number,
     linkedDocSubscription?: () => void,
+    documentHeadings?: MarkdownHeading[],
     localLink?: true,
 }
 
 
 function getWorkspaceFolder(document: vscode.TextDocument) {
-	return vscode.workspace.getWorkspaceFolder(document.uri)?.uri
-		|| vscode.workspace.workspaceFolders?.[0]?.uri;
+    return vscode.workspace.getWorkspaceFolder(document.uri)?.uri
+        || vscode.workspace.workspaceFolders?.[0]?.uri;
 }
 
 

@@ -58,7 +58,9 @@ export async function activate(ctx: vscode.ExtensionContext) {
         documents.ensureDocument(doc);
     }
 
-    ctx.subscriptions.push(vscode.languages.registerDocumentLinkProvider({ language: "markdown"}, {
+    const mdDocSelector = { language: "markdown" };
+
+    ctx.subscriptions.push(vscode.languages.registerDocumentLinkProvider(mdDocSelector, {
         provideDocumentLinks: async (doc) => {
             // console.log("in provider: " + doc.version);
             await documents.processDocument(doc);
@@ -66,7 +68,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         }
     }));
 
-    ctx.subscriptions.push(vscode.languages.registerRenameProvider({ language: "markdown"}, {
+    ctx.subscriptions.push(vscode.languages.registerRenameProvider(mdDocSelector, {
         provideRenameEdits: (doc, pos, newName) => {
             const state = documents.getOrOpenDocument(doc);
             if (state) {
@@ -85,6 +87,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
             // we have to throw to indicate we can not rename here.
             // undefined return means use default word definition to rename.
             throw new Error("Nothing to rename here");
+        }
+    }));
+
+    ctx.subscriptions.push(vscode.languages.registerCodeActionsProvider(mdDocSelector, {
+        provideCodeActions: (doc, range, context) => {
+            const state = documents.getOrOpenDocument(doc);
+            return state?.getCodeActions(range, context);
         }
     }));
 

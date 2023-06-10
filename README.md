@@ -1,5 +1,12 @@
 # Markdown Link Checker
 
+> :exclamation: There are no plans to continue to evolve this extension.
+> Consider moving
+> to [VSCode embedded link validation](https://code.visualstudio.com/docs/languages/markdown#_link-validation)
+> for local link validation
+> and to [blackmist.LinkCheckMD](https://marketplace.visualstudio.com/items?itemName=blackmist.LinkCheckMD)
+> for external link validation.
+
 ![example](https://github.com/dlyz/md-link-checker/raw/main/example.png)
 
 Features:
@@ -9,6 +16,7 @@ Features:
 - local files link validation
   - heading link validation support (including cross-document links)
   - live recheck of cross-document links support when linked document changes in the editor
+  - quick fixes for wrong heading links
 - reference links:
   - validation
   - renaming

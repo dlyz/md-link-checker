@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { MarkdownParser } from './MarkdownParser';
+import { MarkdownHeading, MarkdownParser } from './MarkdownParser';
 import { Slug, Slugifier } from './slugify';
 import { performance } from 'perf_hooks';
 import { URL } from 'url';
@@ -17,6 +17,7 @@ export interface LinkCheckResult {
 	hasFragment: boolean | null,
 	countryCode?: string,
 	linkedDocument?: ParsedLinkedDocument,
+	documentHeadings?: MarkdownHeading[],
 	requestError?: any,
 }
 
@@ -30,8 +31,9 @@ export interface LinkCheckerOptions {
 
 
 export interface ParsedLinkedDocument {
-	uri: vscode.Uri,
-	documentVersion: number,
+	readonly uri: vscode.Uri,
+	readonly documentVersion: number,
+	readonly headings: MarkdownHeading[],
 	hasSluggedHeading(heading: Slug): boolean,
 }
 
@@ -136,12 +138,14 @@ export class MainLinkChecker implements LinkChecker {
 		let pathFound;
 		let fragmentFound = false;
 		let requestError;
+		let documentHeadings;
 
 		const linkedDocUri = uri.with({ fragment: '' });
 		const linkedDocument = document.tryGetParsedDocument(linkedDocUri);
 
 		if (linkedDocument) {
 			pathFound = true;
+			documentHeadings = linkedDocument.headings;
 			if (hasFragment) {
 				fragmentFound = linkedDocument.hasSluggedHeading(this.slugifier.fromFragment(uri.fragment));
 			}
@@ -153,6 +157,7 @@ export class MainLinkChecker implements LinkChecker {
 				if (content !== undefined) {
 					pathFound = true;
 					const { headings } = await this.markdownParser.parseDocument(content, { parseHeadings: true });
+					documentHeadings = headings;
 					const sluggedFragment = this.slugifier.fromFragment(uri.fragment);
 					fragmentFound = !!headings && headings.some(h => h.slugged.equals(sluggedFragment));
 				} else {
@@ -172,6 +177,7 @@ export class MainLinkChecker implements LinkChecker {
 			statusCode: pathFound ? 200 : 404,
 			requestError,
 			linkedDocument,
+			documentHeadings
 		};
 	}
 }

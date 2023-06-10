@@ -3,7 +3,7 @@
   "publisher": "dlyz",
   "displayName": "Markdown Link Checker",
   "description": "Validates local and external links in markdown documents. Also checks links to heading in local files.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "preview": true,
   "icon": "icon.png",
